@@ -203,10 +203,10 @@ echo.
 if [%passes%]==[0] goto create_done
 echo Generating PDF...
 if NOT [%verbose%]==[1] goto latex_quiet
-"%latex_directory%\pdflatex.exe" %param_2%.tex
+"%latex_directory%\pdflatex.exe" -interaction=nonstopmode -c-style-errors %param_2%.tex
 goto latex_done
 :latex_quiet
-"%latex_directory%\pdflatex.exe" -quiet %param_2%.tex
+"%latex_directory%\pdflatex.exe" -interaction=nonstopmode -c-style-errors -quiet %param_2%.tex
 :latex_done
 if NOT [%ignore_errors%]==[1] if [%ERRORLEVEL%]==[1] goto error
 echo.
