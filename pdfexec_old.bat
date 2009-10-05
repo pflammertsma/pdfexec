@@ -1,18 +1,4 @@
 @echo off
-cls
-
-set app_dir=%~dp0
-set args=
-:next_param
-if [%1]==[] goto done_params
-set args=%args% %1
-:shift_param
-shift
-goto next_param
-:done_params
-
-cscript //nologo "%app_dir%pdfexec.vbs" %args%
-goto close
 
 :: Set up some default variables
 set version=1.4
@@ -39,6 +25,116 @@ echo http://paul.luminos.nl
 echo For usage and command line switches, start using PDFEXEC /?
 echo.
 
+:: Check an individual parameter and return
+:next_param
+if [%1]==[] goto done_params
+if [%1]==[/?] goto show_help
+if [%1]==[-?] goto show_help
+if [%1]==[/h] goto show_help
+if [%1]==[-h] goto show_help
+if [%1]==[/H] goto show_help
+if [%1]==[-H] goto show_help
+if [%1]==[/c] goto no_close
+if [%1]==[-c] goto no_close
+if [%1]==[/C] goto no_close
+if [%1]==[-C] goto no_close
+if [%1]==[/i] goto ignore_errors
+if [%1]==[-i] goto ignore_errors
+if [%1]==[/I] goto ignore_errors
+if [%1]==[-I] goto ignore_errors
+if [%1]==[/o] goto no_open
+if [%1]==[-o] goto no_open
+if [%1]==[/O] goto no_open
+if [%1]==[-O] goto no_open
+if [%1]==[/b] goto bibtex
+if [%1]==[-b] goto bibtex
+if [%1]==[/B] goto bibtex
+if [%1]==[-B] goto bibtex
+if [%1]==[/pa] goto passes
+if [%1]==[-pa] goto passes
+if [%1]==[/PA] goto passes
+if [%1]==[-PA] goto passes
+if [%1]==[/pe] goto pause_errors
+if [%1]==[-pe] goto pause_errors
+if [%1]==[/PE] goto pause_errors
+if [%1]==[-PE] goto pause_errors
+if [%1]==[/p] goto pause
+if [%1]==[-p] goto pause
+if [%1]==[/P] goto pause
+if [%1]==[-P] goto pause
+if [%1]==[/s] goto style
+if [%1]==[-s] goto style
+if [%1]==[/S] goto style
+if [%1]==[-S] goto style
+if [%1]==[/v] goto verbose
+if [%1]==[-v] goto verbose
+if [%1]==[/V] goto verbose
+if [%1]==[-V] goto verbose
+if [%param_1%]==[] goto param_1
+if [%param_2%]==[] goto param_2
+goto shift_param
+
+:: Set the various parameters
+:no_close
+set no_close=1
+goto :shift_param
+:ignore_errors
+set ignore_errors=1
+goto :shift_param
+:no_open
+set no_open=1
+goto :shift_param
+:bibtex
+set bibtex=1
+goto :shift_param
+:passes
+if [%2%]==[0] goto passes_ok
+if [%2%]==[1] goto passes_ok
+if [%2%]==[2] goto passes_ok
+:passes_ok
+set passes=%2
+shift
+goto :shift_param
+:pause
+set pause=1
+goto :shift_param
+:pause_errors
+set pause_errors=1
+goto :shift_param
+:verbose
+set verbose=1
+goto :shift_param
+:style
+if [%2]==[verb] goto style_ok
+if [%2]==[tt] goto style_ok
+if [%2]==[math] goto style_ok
+if [%2]==[poly] goto style_ok
+if [%2]==[code] goto style_no_latex
+if [%2]==[newcode] goto style_no_latex
+echo Unsupported style "%2" requested; parameter dropped.
+goto shift_param
+:style_no_latex
+set no_latex=1
+:style_ok
+set style=%2
+goto :shift_param
+:param_1
+set param_1=%1
+goto :shift_param
+:param_2
+set param_2=%1
+goto :shift_param
+:show_help
+set help=1
+goto :shift_param
+
+:: Shift the next parameter up one position
+:shift_param
+shift
+goto next_param
+
+:: Check if parameters were sent
+:done_params
 if [%help%]==[1] goto help
 if [%param_1%]==[] goto ask_file1
 goto check_file1
