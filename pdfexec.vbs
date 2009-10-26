@@ -4,6 +4,8 @@ needCScript = False
 needRerun = "Label(s) may have changed. Rerun"
 needsRerun = False
 autoRerun = True
+pdfFile = ""
+run = 1
 
 Set oShell = CreateObject("WScript.Shell")
 
@@ -182,52 +184,57 @@ Sub pdfExec()
     oShell.CurrentDirectory = pathFile
     needsRerun = False
     If fso.FileExists(texFile) Then
-        Set objFile = fso.GetFile(texFile)
-        If objFile.Size > 0 Then
-            Set objReadFile = fso.OpenTextFile(texFile, 1)
-            Do While Not objReadFile.AtEndOfStream
-                fileLine = objReadFile.ReadLine()
-                If Left(fileLine, 1) = "%" Then
-                    fileLine = Trim(Mid(fileLine, 2))
-                    If Left(fileLine, 7) = "parent=" Then
-                        fileLine = Mid(fileLine, 8)
-                        parentSteps = parentSteps + 1
-                        If parentSteps > 4 Then
-                            hadError = True
-                            ShowError "More than 4 parent files were referenced. Check your file headers for recursion."
+        If run = 1 Then
+            Set objFile = fso.GetFile(texFile)
+            If objFile.Size > 0 Then
+                Set objReadFile = fso.OpenTextFile(texFile, 1)
+                Do While Not objReadFile.AtEndOfStream
+                    fileLine = objReadFile.ReadLine()
+                    If Left(fileLine, 1) = "%" Then
+                        fileLine = Trim(Mid(fileLine, 2))
+                        If Left(fileLine, 7) = "parent=" Then
+                            fileLine = Mid(fileLine, 8)
+                            parentSteps = parentSteps + 1
+                            If parentSteps > 4 Then
+                                hadError = True
+                                ShowError "More than 4 parent files were referenced. Check your file headers for recursion."
+                                Exit Sub
+                            End If
+                            DoLog "Parent file:  " & fileLine
+                            pos = InStrRev(fileLine, "\")
+                            If pos > 0 Then
+                                pathFile = fso.GetAbsolutePathName(pathFile & Mid(fileLine, 1, pos))
+                                If Right(pathFile, 1) <> "\" Then pathFile = pathFile & "\"
+                                texFile = Mid(fileLine, pos+1)
+                            Else
+                                texFile = fileLine
+                            End If
+                            pdfExec()
                             Exit Sub
                         End If
-                        DoLog "Parent file:  " & fileLine
-                        pos = InStrRev(fileLine, "\")
-                        If pos > 0 Then
-                            pathFile = fso.GetAbsolutePathName(pathFile & Mid(fileLine, 1, pos))
-                            If Right(pathFile, 1) <> "\" Then pathFile = pathFile & "\"
-                            texFile = Mid(fileLine, pos+1)
-                        Else
-                            texFile = fileLine
-                        End If
-                        pdfExec()
-                        Exit Sub
+                    Else
+                        Exit Do
                     End If
-                Else
-                    Exit Do
-                End If
-            Loop
-        Else
-            hadError = True
-            ShowError "Input file was empty:" & vbCrLf & vbCrLf & texFile
-            Exit Sub
+                Loop
+            Else
+                hadError = True
+                ShowError "Input file was empty:" & vbCrLf & vbCrLf & texFile
+                Exit Sub
+            End If
+            pos = InStrRev(texFile, ".")
+            If pos > 0 Then
+                pdfFile = Left(texFile, pos-1) & ".pdf"
+                filename = Left(texFile, pos-1)
+            Else
+                pdfFile = texFile & ".pdf"
+                filename = texFile
+            End If
+            bibFile = filename & ".bib"
+            ClosePDF pdfFile
         End If
-        pos = InStrRev(texFile, ".")
-        If pos > 0 Then
-            pdfFile = Left(texFile, pos-1) & ".pdf"
-            filename = Left(texFile, pos-1)
-        Else
-            pdfFile = texFile & ".pdf"
-            filename = texFile
-        End If
-        bibFile = filename & ".bib"
-        ClosePDF pdfFile
+        
+        DoLog ""
+        DoLog "Run #" & run & "..."
 
         errors = ""
         errorCount = 0
@@ -403,10 +410,14 @@ Sub pdfExec()
             End If
         End If
         If needsRerun Then
+            doRerun = False
             If autoRerun Then
-                pdfExec()
-                Exit Sub
+                doRerun = True
             ElseIf MsgBox("A second pass is needed to complete compilation. Do you want to run it now?", 48 + 4, "PDFexec v" & pdfexecVersion) = vbYes Then
+                doRerun = True
+            End If
+            If doRerun Then
+                run = run + 1
                 pdfExec()
                 Exit Sub
             End If
