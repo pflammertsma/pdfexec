@@ -3,6 +3,7 @@ pdfexecVersion = "1.5"
 needCScript = False
 needRerun = "Label(s) may have changed. Rerun"
 needsRerun = False
+autoRerun = True
 
 Set oShell = CreateObject("WScript.Shell")
 
@@ -101,7 +102,7 @@ Sub ClosePDF(file)
     DoProgressDone
 End Sub
 
-Function HandleError(output, file, pos)
+Function HandleError(output, filename, pos)
     mode = 0
     msg = ""
     If Left(output, 6) = "!  ==>" Then
@@ -114,6 +115,9 @@ Function HandleError(output, file, pos)
     ElseIf Left(output, 15) = "! LaTeX Error: " Then
         mode = 2
         msg = NoPeriod(Mid(output, 16))
+    ElseIf Left(output, 9) = "Warning: " Then
+        mode = 1
+        msg = NoPeriod(Mid(output, 10))
     ElseIf Left(output, 15) = "LaTeX Warning: " Then
         mode = 1
         msg = NoPeriod(Mid(output, 16))
@@ -130,8 +134,8 @@ Function HandleError(output, file, pos)
         If pos > 0 Then
             msg = msg & " on input line " & pos
         End If
-        If file <> "" Then
-            msg = msg & " in """ & file & """"
+        If filename <> "" Then
+            msg = msg & " in """ & filename & """"
         End If
     End If
     If mode = 1 Then
@@ -170,6 +174,11 @@ End Sub
 
 Sub pdfExec()
     DoLog "Path:         " & pathFile
+    If Not fso.FolderExists(pathFile) Then
+        hadError = True
+        ShowError "The path cannot be found:" & vbCrLf & vbCrLf & pathFile
+        Exit Sub
+    End If
     oShell.CurrentDirectory = pathFile
     needsRerun = False
     If fso.FileExists(texFile) Then
@@ -191,7 +200,8 @@ Sub pdfExec()
                         DoLog "Parent file:  " & fileLine
                         pos = InStrRev(fileLine, "\")
                         If pos > 0 Then
-                            pathFile = pathFile & Mid(fileLine, 1, pos)
+                            pathFile = fso.GetAbsolutePathName(pathFile & Mid(fileLine, 1, pos))
+                            If Right(pathFile, 1) <> "\" Then pathFile = pathFile & "\"
                             texFile = Mid(fileLine, pos+1)
                         Else
                             texFile = fileLine
@@ -210,16 +220,15 @@ Sub pdfExec()
         End If
         pos = InStrRev(texFile, ".")
         If pos > 0 Then
-            pdfFile = Mid(texFile, 1, pos-1) & ".pdf"
+            pdfFile = Left(texFile, pos-1) & ".pdf"
+            filename = Left(texFile, pos-1)
         Else
             pdfFile = texFile & ".pdf"
+            filename = texFile
         End If
+        bibFile = filename & ".bib"
         ClosePDF pdfFile
-        DoProgressStart "Compiling LaTeX file: " & texFile
-        If verbose Then
-            DoLog "..."
-        End If
-        Set response = oShell.Exec("pdflatex -interaction=nonstopmode -c-style-errors -halt-on-error """ & texFile & """")
+
         errors = ""
         errorCount = 0
         warnings = ""
@@ -230,64 +239,139 @@ Sub pdfExec()
         emergency = False
         errPrefix = pathFile
         errContinues = False
-        Do While Not response.StdOut.AtEndOfStream
-            If response.Status > 0 Then
-                Exit Do
+
+        If fso.FileExists(bibFile) Then
+            DoProgressStart "Compiling BibTeX file: " & bibFile
+            If verbose Then
+                DoLog "..."
             End If
-            curLine = response.StdOut.ReadLine()
-            ' fullOutput = fullOutput & vbCrLf & errLine
-            If errContinues Then
-                errLine = errLine & curLine
-                If Len(curLine) < 79 Then
-                    errContinues = False
+            Set response = oShell.Exec("bibtex """ & filename & """")
+            Do While Not response.StdOut.AtEndOfStream
+                If response.Status > 0 Then
+                    Exit Do
                 End If
-            Else
-                errLine = curLine
-                If Len(curLine) >= 79 Then
-                    errContinues = True
-                End If
-            End If
-            If Not errContinues Then
-                If verbose Then
-                    DoLog errLine
+                curLine = response.StdOut.ReadLine()
+                ' fullOutput = fullOutput & vbCrLf & errLine
+                If errContinues Then
+                    errLine = errLine & curLine
+                    If Len(curLine) < 79 Then
+                        errContinues = False
+                    End If
                 Else
-                    DoProgress
-                End If
-                HandleError errLine, texFile, 0
-                If Left(errLine, Len(errPrefix)) = errPrefix Then
-                    errLine = Mid(errLine, Len(errPrefix)+1)
-                    pos1 = InStr(errLine, ":")
-                    pos2 = InStr(errLine, " ")
-                    errFile = ""
-                    If (pos1 > 0 And pos1 < 6) Or (pos1 > 0 And pos2 > 0 And pos1 < pos2) Then
-                        errFile = Left(errLine, pos1-1)
-                        If pos1 > 0 And pos1<pos2 Then
-                            errLine = Mid(errLine, pos1+1)
-                        Else
-                            errLine = Mid(errLine, pos2+1)
-                        End If
+                    errLine = curLine
+                    If Len(curLine) >= 79 Then
+                        errContinues = True
                     End If
-                    errPos = 0
-                    pos1 = InStr(errLine, ":")
-                    pos2 = InStr(errLine, " ")
-                    If (pos1 > 0 And pos1 < 6) Or (pos1 > 0 And pos2 > 0 And pos1 < pos2) Then
-                        errPos = Left(errLine, pos1-1)
-                        If pos1 > 0 And pos1<pos2 Then
-                            errLine = Mid(errLine, pos1+1)
-                        Else
-                            errLine = Mid(errLine, pos2+1)
-                        End If
-                    End If
-                    HandleError "! " & errLine, errFile, CInt(errPos)
                 End If
+                If Not errContinues Then
+                    If verbose Then
+                        DoLog errLine
+                    Else
+                        DoProgress
+                    End If
+                    HandleError errLine, bibFile, 0
+                    If Left(errLine, Len(errPrefix)) = errPrefix Then
+                        errLine = Mid(errLine, Len(errPrefix)+1)
+                        pos1 = InStr(errLine, ":")
+                        pos2 = InStr(errLine, " ")
+                        errFile = ""
+                        If (pos1 > 0 And pos1 < 6) Or (pos1 > 0 And pos2 > 0 And pos1 < pos2) Then
+                            errFile = Left(errLine, pos1-1)
+                            If pos1 > 0 And pos1<pos2 Then
+                                errLine = Mid(errLine, pos1+1)
+                            Else
+                                errLine = Mid(errLine, pos2+1)
+                            End If
+                        End If
+                        errPos = 0
+                        pos1 = InStr(errLine, ":")
+                        pos2 = InStr(errLine, " ")
+                        If (pos1 > 0 And pos1 < 6) Or (pos1 > 0 And pos2 > 0 And pos1 < pos2) Then
+                            errPos = Left(errLine, pos1-1)
+                            If pos1 > 0 And pos1<pos2 Then
+                                errLine = Mid(errLine, pos1+1)
+                            Else
+                                errLine = Mid(errLine, pos2+1)
+                            End If
+                        End If
+                        HandleError "! " & errLine, errFile, CInt(errPos)
+                    End If
+                End If
+            Loop
+            If verbose Then
+                DoLog ""
+            Else
+                DoProgressDone
             End If
-        Loop
-        If verbose Then
-            DoLog ""
-        Else
-            DoProgressDone
+            errCode = response.ExitCode
         End If
-        DoLog ""
+
+        If errCode = 0 And Not emergency And fatalError = "" Then
+            DoProgressStart "Compiling LaTeX file: " & texFile
+            If verbose Then
+                DoLog "..."
+            End If
+            Set response = oShell.Exec("pdflatex -interaction=nonstopmode -c-style-errors -halt-on-error """ & texFile & """")
+            Do While Not response.StdOut.AtEndOfStream
+                If response.Status > 0 Then
+                    Exit Do
+                End If
+                curLine = response.StdOut.ReadLine()
+                ' fullOutput = fullOutput & vbCrLf & errLine
+                If errContinues Then
+                    errLine = errLine & curLine
+                    If Len(curLine) < 79 Then
+                        errContinues = False
+                    End If
+                Else
+                    errLine = curLine
+                    If Len(curLine) >= 79 Then
+                        errContinues = True
+                    End If
+                End If
+                If Not errContinues Then
+                    If verbose Then
+                        DoLog errLine
+                    Else
+                        DoProgress
+                    End If
+                    HandleError errLine, texFile, 0
+                    If Left(errLine, Len(errPrefix)) = errPrefix Then
+                        errLine = Mid(errLine, Len(errPrefix)+1)
+                        pos1 = InStr(errLine, ":")
+                        pos2 = InStr(errLine, " ")
+                        errFile = ""
+                        If (pos1 > 0 And pos1 < 6) Or (pos1 > 0 And pos2 > 0 And pos1 < pos2) Then
+                            errFile = Left(errLine, pos1-1)
+                            If pos1 > 0 And pos1<pos2 Then
+                                errLine = Mid(errLine, pos1+1)
+                            Else
+                                errLine = Mid(errLine, pos2+1)
+                            End If
+                        End If
+                        errPos = 0
+                        pos1 = InStr(errLine, ":")
+                        pos2 = InStr(errLine, " ")
+                        If (pos1 > 0 And pos1 < 6) Or (pos1 > 0 And pos2 > 0 And pos1 < pos2) Then
+                            errPos = Left(errLine, pos1-1)
+                            If pos1 > 0 And pos1<pos2 Then
+                                errLine = Mid(errLine, pos1+1)
+                            Else
+                                errLine = Mid(errLine, pos2+1)
+                            End If
+                        End If
+                        HandleError "! " & errLine, errFile, CInt(errPos)
+                    End If
+                End If
+            Loop
+            If verbose Then
+                DoLog ""
+            Else
+                DoProgressDone
+            End If
+            DoLog ""
+        End If
+
         errCode = response.ExitCode
         If errCode <> 0 Or emergency Or fatalError <> "" Then
             hadError = True
@@ -319,7 +403,10 @@ Sub pdfExec()
             End If
         End If
         If needsRerun Then
-            If MsgBox("A second pass is needed to complete compilation. Do you want to run it now?", 48 + 4, "PDFexec v" & pdfexecVersion) = vbYes Then
+            If autoRerun Then
+                pdfExec()
+                Exit Sub
+            ElseIf MsgBox("A second pass is needed to complete compilation. Do you want to run it now?", 48 + 4, "PDFexec v" & pdfexecVersion) = vbYes Then
                 pdfExec()
                 Exit Sub
             End If
@@ -399,6 +486,8 @@ For Each arg In argList
             noLogo = True
         Case "\nobeep"
             noBeep = True
+        case "\norerun"
+            autoRerun = False
         Case "\s"
             noDialogs = True
         Case "\v"
