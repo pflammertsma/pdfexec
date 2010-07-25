@@ -5,6 +5,7 @@ needRerun = "Label(s) may have changed. Rerun"
 needsRerun = False
 autoRerun = True
 pdfFile = ""
+arguments = ""
 run = 1
 
 Set oShell = CreateObject("WScript.Shell")
@@ -131,7 +132,19 @@ Function HandleError(output, filename, pos)
         mode = 2
         msg = NoPeriod(Mid(output, 3))
     Else
-        Exit Function
+        pos = InStr(output, "Error: ")
+        If pos > 0 Then
+            mode = 2
+            msg = NoPeriod(Mid(output, pos+7))
+        Else
+            pos = InStr(output, "Warning: ")
+            If pos > 0 Then
+                mode = 1
+                msg = NoPeriod(Mid(output, pos+9))
+            Else
+                Exit Function
+            End If
+        End If
     End If
     If mode > 0 Then
         If pos > 0 Then
@@ -214,6 +227,8 @@ Sub pdfExec()
                             End If
                             pdfExec()
                             Exit Sub
+                        ElseIf Left(fileLine, 10) = "arguments=" Then
+                            arguments = Mid(fileLine, 11) & " "
                         End If
                     Else
                         Exit Do
@@ -321,7 +336,7 @@ Sub pdfExec()
             If verbose Then
                 DoLog "..."
             End If
-            Set response = oShell.Exec("pdflatex -interaction=nonstopmode -c-style-errors -halt-on-error """ & texFile & """")
+            Set response = oShell.Exec("pdflatex " & arguments & "-interaction=nonstopmode -c-style-errors -halt-on-error """ & texFile & """")
             Do While Not response.StdOut.AtEndOfStream
                 If response.Status > 0 Then
                     Exit Do
@@ -409,7 +424,11 @@ Sub pdfExec()
                     ShowError "A warning occurred during compilation:" & fatalError
                 End If
             ElseIf errors <> "" Then
-                warnings = errors & vbCrLf & warnings
+                hadError = True
+                'warnings = errors & vbCrLf & warnings
+                If showErrors Then
+                    ShowError "LaTeX returned the following error(s) during compilation:" & vbCrLf & errors
+                End If
             End If
         End If
         If needsRerun Then
@@ -465,7 +484,7 @@ verbose = False
 sleep = 0
 Set argList = WScript.Arguments
 For Each arg In argList
-    If Left(arg, 7) = "\pause:" Then
+    If Left(arg, 7) = "/pause:" Then
         mode = Mid(arg, 8)
         If IsNumeric(mode) Then
             mode = CInt(mode)
@@ -479,12 +498,12 @@ For Each arg In argList
                 pauseErrors = True
             End If
         End If
-    ElseIf Left(arg, 6) = "\wait:" Then
+    ElseIf Left(arg, 6) = "/wait:" Then
         mode = Mid(arg, 7)
         If IsNumeric(mode) Then
             sleep = mode
         End If
-    ElseIf Left(arg, 6) = "\show:" Then
+    ElseIf Left(arg, 6) = "/show:" Then
         mode = Mid(arg, 7)
         If IsNumeric(mode) Then
             mode = CInt(mode)
@@ -502,17 +521,17 @@ For Each arg In argList
         End If
     Else
         Select Case arg
-        Case "\nologo"
+        Case "/nologo"
             noLogo = True
-        Case "\nobeep"
+        Case "/nobeep"
             noBeep = True
-        case "\norerun"
+        case "/norerun"
             autoRerun = False
-        Case "\s"
+        Case "/s"
             noDialogs = True
-        Case "\v"
+        Case "/v"
             verbose = True
-        Case "\p"
+        Case "/p"
             pauseSuccess = True
         Case "/p"
             pauseSuccess = True
@@ -520,7 +539,7 @@ For Each arg In argList
             pauseErrors = True
             pauseWarnings = False
         Case Else
-            If Left(arg, 1) = "\" Or Left(arg, 1) = "/" Then
+            If Left(arg, 1) = "/" Then
                 ShowWarning "Unknown argument: " & arg
             Else
                 file = arg
