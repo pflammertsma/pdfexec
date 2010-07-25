@@ -1,5 +1,5 @@
 Dim pdfexecVersion, needCScript
-pdfexecVersion = "1.5"
+pdfexecVersion = "1.6"
 needCScript = False
 needRerun = "Label(s) may have changed. Rerun"
 needsRerun = False
@@ -102,6 +102,7 @@ Sub ClosePDF(file)
         WScript.Sleep 250
     Loop
     DoProgressDone
+    oShell.AppActivate "PDFExec"
 End Sub
 
 Function HandleError(output, filename, pos)
@@ -176,12 +177,11 @@ End Sub
 
 Sub pdfExec()
     DoLog "Path:         " & pathFile
-    If Not fso.FolderExists(pathFile) Then
+    If pathFile <> "" And Not fso.FolderExists(pathFile) Then
         hadError = True
         ShowError "The path cannot be found:" & vbCrLf & vbCrLf & pathFile
         Exit Sub
     End If
-    oShell.CurrentDirectory = pathFile
     needsRerun = False
     If fso.FileExists(texFile) Then
         If run = 1 Then
@@ -201,10 +201,13 @@ Sub pdfExec()
                                 Exit Sub
                             End If
                             DoLog "Parent file:  " & fileLine
+                            fileLine = Replace(fileLine, "/", "\")
                             pos = InStrRev(fileLine, "\")
                             If pos > 0 Then
                                 pathFile = fso.GetAbsolutePathName(pathFile & Mid(fileLine, 1, pos))
-                                If Right(pathFile, 1) <> "\" Then pathFile = pathFile & "\"
+                                endChr = Right(pathFile, 1)
+                                If endChr <> "/" And endChr <> "\" Then pathFile = pathFile & "\"
+                                oShell.CurrentDirectory = pathFile
                                 texFile = Mid(fileLine, pos+1)
                             Else
                                 texFile = fileLine
@@ -459,6 +462,7 @@ showErrors = True
 noDialogs = False
 noBeep = False
 verbose = False
+sleep = 0
 Set argList = WScript.Arguments
 For Each arg In argList
     If Left(arg, 7) = "\pause:" Then
@@ -474,6 +478,11 @@ For Each arg In argList
             If (mode And 4) > 0 Then
                 pauseErrors = True
             End If
+        End If
+    ElseIf Left(arg, 6) = "\wait:" Then
+        mode = Mid(arg, 7)
+        If IsNumeric(mode) Then
+            sleep = mode
         End If
     ElseIf Left(arg, 6) = "\show:" Then
         mode = Mid(arg, 7)
@@ -573,4 +582,15 @@ If showSuccess And Not hadError and Not hadWarning Then
     ShowMessage "PDF file succesfully created:" & vbcrlf & vbcrlf & "    " & pathFile & pdfFile
 End If
 
+If sleep > 0 Then
+    DoLog ""
+    oShell.AppActivate "PDFExec"
+    DoProgressStart "Exiting; press [pause] to interrupt.  "
+    sec = sleep
+    While sec > 0
+        DoProgressStart(sec & ".. ")
+        wscript.Sleep(1000)
+        sec = sec - 1
+    Wend
+End If
 wscript.quit

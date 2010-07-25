@@ -1,6 +1,8 @@
 @echo off
 cls
 
+title PDFExec
+
 set app_dir=%~dp0
 set args=
 :next_param
