@@ -6,7 +6,8 @@ needsRerun = False
 autoRerun = True
 pdfFile = ""
 arguments = ""
-run = 1
+run = 0
+runs = 1
 
 Set oShell = CreateObject("WScript.Shell")
 
@@ -188,8 +189,13 @@ Sub RestartWithCScript()
     wscript.quit
 End Sub
 
-Sub pdfExec()
-    DoLog "Path:         " & pathFile
+Sub pdfExec(nextRun)
+    If nextRun Then
+        run = run + 1
+    End If
+    If run = 1 Then
+        DoLog "Path:         " & pathFile
+    End If
     If pathFile <> "" And Not fso.FolderExists(pathFile) Then
         hadError = True
         ShowError "The path cannot be found:" & vbCrLf & vbCrLf & pathFile
@@ -225,7 +231,7 @@ Sub pdfExec()
                             Else
                                 texFile = fileLine
                             End If
-                            pdfExec()
+                            pdfExec(False)
                             Exit Sub
                         ElseIf Left(fileLine, 10) = "arguments=" Then
                             arguments = Mid(fileLine, 11) & " "
@@ -247,12 +253,22 @@ Sub pdfExec()
                 pdfFile = texFile & ".pdf"
                 filename = texFile
             End If
+            auxFile = filename & ".aux"
+            bblFile = filename & ".bbl"
             bibFile = filename & ".bib"
-            ClosePDF pdfFile
+            ClosePDF(pdfFile)
+            DoLog ""
         End If
-        
-        DoLog ""
-        DoLog "Run #" & run & "..."
+
+        If fso.FileExists(bibFile) Then
+            If Not fso.FileExists(auxFile) Then
+                runs = runs + 1
+            End If
+            If Not fso.FileExists(bblFile) Then
+                runs = runs + 1
+            End If
+        End If
+        DoLog "Run #" & run & " of " & runs & "..."
 
         errors = ""
         errorCount = 0
@@ -439,10 +455,18 @@ Sub pdfExec()
                 doRerun = True
             End If
             If doRerun Then
-                run = run + 1
-                pdfExec()
-                Exit Sub
+                ' We need two more runs, because the first simply refills the AUX
+                If runs = 1 Then
+                    runs = runs + 2
+                ElseIf runs > 3 Or run >= runs Then
+                    ShowError "PDFExec has already run " & run & " passes and was expected to run more. Please make sure that the AUX and BBL files are correctly being written to the output directory."
+                    Exit Sub
+                End If
             End If
+        End If
+        If run < runs Then
+            pdfExec(True)
+            Exit Sub
         End If
         If warnings <> "" And showWarnings Then
             hadWarning = True
@@ -451,8 +475,8 @@ Sub pdfExec()
         End If
         DoLog "Finished with " & errorCount & " errors and " & warningCount & " warnings."
         DoLog ""
-        If Not hadError Then
-            OpenPDF pdfFile
+        If runs <= run And Not hadError Then
+            OpenPDF(pdfFile)
         End If
     Else
         hadError = True
@@ -589,7 +613,7 @@ Dim errors, warnings, errorCount, warningCount, fatalError, fatalErrorLine, pare
 
 DoLog ""
 
-pdfExec()
+pdfExec(True)
 
 If pauseSuccess Or (hadError And pauseErrors) Or (hadWarning And pauseWarnings) Then
     Wscript.StdOut.Write vbCrLf & "[press return]"
