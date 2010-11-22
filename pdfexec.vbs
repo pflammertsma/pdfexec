@@ -1,5 +1,5 @@
 Dim pdfexecVersion, needCScript
-pdfexecVersion = "1.6"
+pdfexecVersion = "1.6.1"
 needCScript = False
 needRerun = "Label(s) may have changed. Rerun"
 needsRerun = False
@@ -23,7 +23,7 @@ End Sub
 
 Sub ShowWarning(msg)
     DoLog "WARNING: " & replace(replace(msg, vbCrLf & vbCrLf, vbCrLf), vbCrLf, vbCrLf & "         ")
-    If Not noDialogs Then
+    If showWarnings And Not noDialogs Then
         MsgBox msg, 48, "PDFexec v" & pdfexecVersion & ": Warning"
     End If
 End Sub
@@ -107,6 +107,41 @@ Sub ClosePDF(file)
     oShell.AppActivate "PDFExec"
 End Sub
 
+Sub ShowHelp()
+    DoLog "Compiles TeX files using LaTeX and simultaneously managing opening and"
+    DoLog "closing the resulting PDF file."
+    DoLog ""
+    DoLog "PDFEXEC [switches] input_file output_name"
+    DoLog ""
+    DoLog "  input_file     TeX file to input into LaTeX"
+    DoLog "  output_name    Filename, excluding file extension, to use as filename for"
+    DoLog "                 .tex file and .pdf file"
+    DoLog ""
+    DoLog "The list of switches is as follows:"
+    DoLog ""
+    DoLog "  /?             This help screen"
+    DoLog "  /nologo        Disable logo"
+    DoLog "  /nobeep        Disable beep on completion"
+    DoLog "  /norerun       Never rerun compilation"
+    DoLog "  /show:[mode]   Error messages to display; binary OR of [mode]:"
+    DoLog "        1 = success"
+    DoLog "        2 = warnings"
+    DoLog "        4 = errors"
+    DoLog "  /pause:[mode]  Error messages to pause on; binary OR of [mode]:"
+    DoLog "        1 = success"
+    DoLog "        2 = warnings"
+    DoLog "        4 = errors"
+    DoLog "  /wait:[sec]    Number of [sec] seconds to wait when done"
+    'DoLog "  /o             Do not automatically open Acrobat"
+    'DoLog "  /c             Do not automatically close Acrobat"
+    'DoLog "  /p             Require keystroke to terminate"
+    'DoLog "  /pe            Require keystroke to terminate, only on errors"
+    DoLog "  /pa            Number of compilation passes to run"
+    'DoLog "  /b             Compile associated BibTeX"
+    DoLog "  /s             Silent mode"
+    DoLog "  /v             Verbose mode for LaTeX"
+End Sub
+
 Function HandleError(output, filename, pos)
     mode = 0
     msg = ""
@@ -123,6 +158,12 @@ Function HandleError(output, filename, pos)
     ElseIf Left(output, 9) = "Warning: " Then
         mode = 1
         msg = NoPeriod(Mid(output, 10))
+    ElseIf Left(output, 9) = "Warning--" Then  'BibTeX
+        mode = 1
+        msg = NoPeriod(Mid(output, 10))
+    ElseIf Left(output, 16) = "I was expecting " Then  'BibTeX
+        mode = 2
+        msg = NoPeriod(output)
     ElseIf Left(output, 15) = "LaTeX Warning: " Then
         mode = 1
         msg = NoPeriod(Mid(output, 16))
@@ -468,10 +509,12 @@ Sub pdfExec(nextRun)
             pdfExec(True)
             Exit Sub
         End If
-        If warnings <> "" And showWarnings Then
+        If warnings <> "" Then
             hadWarning = True
             ShowWarning "LaTeX returned the following warning(s) during compilation:" & vbCrLf & warnings & fatalError
-            DoLog ""
+            If showWarnings Then
+                DoLog ""
+            End If
         End If
         DoLog "Finished with " & errorCount & " errors and " & warningCount & " warnings."
         DoLog ""
@@ -502,6 +545,7 @@ pauseErrors = False
 showSuccess = False
 showWarnings = False
 showErrors = True
+showHelpMsg = False
 noDialogs = False
 noBeep = False
 verbose = False
@@ -557,11 +601,14 @@ For Each arg In argList
             verbose = True
         Case "/p"
             pauseSuccess = True
-        Case "/p"
-            pauseSuccess = True
+        Case "/pw"
+            pauseWarnings = True
         Case "/pe"
             pauseErrors = True
-            pauseWarnings = False
+        Case "/h"
+            showHelpMsg = True
+        Case "/?"
+            showHelpMsg = True
         Case Else
             If Left(arg, 1) = "/" Then
                 ShowWarning "Unknown argument: " & arg
@@ -588,7 +635,13 @@ If hasConsole Then
 End If
 
 If file = "" Then
-    ShowError "No input file was specified."
+    If Not showHelpMsg Then
+        ShowError "No input file was specified."
+        showHelpMsg = True
+    End If
+End If
+If showHelpMsg Then
+    ShowHelp
     wscript.quit 2
 End If
 
