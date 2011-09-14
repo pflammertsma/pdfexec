@@ -1,5 +1,5 @@
 Dim pdfexecVersion, needCScript
-pdfexecVersion = "1.6.1"
+pdfexecVersion = "1.6.2"
 needCScript = False
 needRerun = "Label(s) may have changed. Rerun"
 needsRerun = False
@@ -8,6 +8,8 @@ pdfFile = ""
 arguments = ""
 run = 0
 runs = 1
+gotoPage = ""
+gotoName = ""
 
 Set oShell = CreateObject("WScript.Shell")
 
@@ -69,7 +71,13 @@ End Function
 Sub OpenPDF(file)
     DoProgressStart "Opening " & file & ".."
     openErr = ""
-    Set response = oShell.Exec("pdfopen.exe --file=" & file)
+	args = " --file=" & file
+	If gotoPage <> "" Then
+		args = args & " --page=" & gotoPage
+	ElseIf gotoName <> "" Then
+		args = args & " --goto=" & gotoName
+	End If
+    Set response = oShell.Exec("pdfopen.exe" & args)
     Do While response.Status = 0
     'Do While Not response.StdErr.AtEndOfStream
         DoProgress
@@ -80,6 +88,13 @@ Sub OpenPDF(file)
         'openErr = openErr & vbCrLf & response.StdErr.ReadLine()
     Loop
     If response.ExitCode = 0 Then
+	    If Not oShell.AppActivate(file & " - Adobe Reader") Then
+			If Not oShell.AppActivate(file & " - Adobe Acrobat") Then
+				If Not oShell.AppActivate(file & " - Adobe Acrobat Professional") Then
+					DoLog "Could not focus PDF application"
+				End If
+			End If
+		End If
         DoProgressDone
     Else
         DoLog " Failed."
@@ -90,25 +105,30 @@ End Sub
 
 Sub ClosePDF(file)
     DoProgressStart "Closing PDF.."
+	' Try to neatly close the PDF file
     If fso.FileExists(pdfFile) Then
-        Set response1 = oShell.Exec("pdfclose.exe --file=" & file)
+        Set response1 = oShell.Exec("pdfclose.exe --file=" & pathFile & file)
     Else
         Set response1 = oShell.Exec("pdfclose.exe")
     End If
-    Set response2 = oShell.Exec("taskkill /FI ""WINDOWTITLE eq " & file & " - Adobe Acrobat Professional""")
-    Set response3 = oShell.Exec("taskkill /FI ""WINDOWTITLE eq " & file & " - Adobe Acrobat""")
-    Set response4 = oShell.Exec("taskkill /FI ""WINDOWTITLE eq " & file & " - Adobe Reader""")
-    
-    Do While response1.Status = 0 Or response2.Status = 0 Or response3.Status = 0 Or response4.Status = 0
+    Do While response1.Status = 0
         DoProgress
         WScript.Sleep 250
     Loop
+	' Kill the process if it is still running
+	Set response2 = oShell.Exec("taskkill /FI ""WINDOWTITLE eq " & file & " - Adobe Acrobat Professional""")
+	Set response3 = oShell.Exec("taskkill /FI ""WINDOWTITLE eq " & file & " - Adobe Acrobat""")
+	Set response4 = oShell.Exec("taskkill /FI ""WINDOWTITLE eq " & file & " - Adobe Reader""")
+	Do While response1.Status = 0 Or response2.Status = 0 Or response3.Status = 0 Or response4.Status = 0
+		DoProgress
+		WScript.Sleep 250
+	Loop
     DoProgressDone
     oShell.AppActivate "PDFExec"
 End Sub
 
 Sub ShowHelp()
-    DoLog "Compiles TeX files using LaTeX and simultaneously managing opening and"
+    DoLog "Compiles TeX files using LaTeX and simultaneously manages opening and"
     DoLog "closing the resulting PDF file."
     DoLog ""
     DoLog "PDFEXEC [switches] input_file output_name"
@@ -140,6 +160,16 @@ Sub ShowHelp()
     'DoLog "  /b             Compile associated BibTeX"
     DoLog "  /s             Silent mode"
     DoLog "  /v             Verbose mode for LaTeX"
+    DoLog "  /cd [dir]      Set working directory"
+    DoLog ""
+    DoLog "Your TeX file can contain some precompiler commands as the first line(s) when"
+    DoLog "when prefixed by %:"
+    DoLog ""
+    DoLog "  %arguments=[a] Additional arguments [a] to send to pdflatex"
+    DoLog "  %parent=[file] Parent file [file] to compile instead of the current file"
+	DoLog "                 (useful for compiling from an include)"
+	DoLog "  %gotopage=[p]  Page [p] to jump to when opening PDF"
+    DoLog "  %gotoname=[n]  Named destination [n] to jump to when opening PDF"
 End Sub
 
 Function HandleError(output, filename, pos)
@@ -276,6 +306,10 @@ Sub pdfExec(nextRun)
                             Exit Sub
                         ElseIf Left(fileLine, 10) = "arguments=" Then
                             arguments = Mid(fileLine, 11) & " "
+                        ElseIf Left(fileLine, 9) = "gotopage=" Then
+                            gotoPage = Mid(fileLine, 10)
+                        ElseIf Left(fileLine, 9) = "gotoname=" Then
+                            gotoName = Mid(fileLine, 10)
                         End If
                     Else
                         Exit Do
@@ -505,7 +539,7 @@ Sub pdfExec(nextRun)
                 End If
             End If
         End If
-        If run < runs Then
+        If run < runs And Not hadError Then
             pdfExec(True)
             Exit Sub
         End If
@@ -536,8 +570,8 @@ If CheckStartMode() Then
     RestartWithCScript
 End If
 
-'Dim args As String
-Dim args, file, pause, pauseErrors, noDialogs, noLogo
+Dim args, file, pause, pauseErrors, noDialogs, noLogo, setPath
+Dim workingDir
 noLogo = False
 pauseSuccess = False
 pauseWarnings = False
@@ -549,10 +583,14 @@ showHelpMsg = False
 noDialogs = False
 noBeep = False
 verbose = False
+setPath = False
 sleep = 0
 Set argList = WScript.Arguments
 For Each arg In argList
-    If Left(arg, 7) = "/pause:" Then
+	If setPath Then
+		workingDir = arg
+		setPath = False
+	ElseIf Left(arg, 7) = "/pause:" Then
         mode = Mid(arg, 8)
         If IsNumeric(mode) Then
             mode = CInt(mode)
@@ -589,6 +627,8 @@ For Each arg In argList
         End If
     Else
         Select Case arg
+		case "/cd"
+			setPath = True
         Case "/nologo"
             noLogo = True
         Case "/nobeep"
@@ -622,9 +662,9 @@ Next
 
 If Not noLogo Then
     DoLog "==============================================================================="
-    DoLog "|              | Intelligent wrapper for LaTeX.                               |"
-    DoLog "| PDFexec v" & pdfexecVersion & " | Copyright (c) 2009, Paul Lammertsma                          |"
-    DoLog "|              | Freely available from http://paul.luminos.nl/                |"
+    DoLog "|                | Intelligent wrapper for LaTeX.                             |"
+    DoLog "| PDFexec v" & pdfexecVersion & " | Copyright (c) 2009, Paul Lammertsma                        |"
+    DoLog "|                | Freely available from http://paul.luminos.nl/              |"
     DoLog "|-----------------------------------------------------------------------------|"
     DoLog "| For usage and command line switches, start PDFexec with the /? switch.      |"
     DoLog "===============================================================================" & vbCrLf
@@ -634,9 +674,18 @@ If hasConsole Then
     DoLog "Using CScript console."
 End If
 
+If workingDir <> "" Then
+	oShell.CurrentDirectory = workingDir
+	DoLog "Working directory set."
+End If
+
+If hasConsole Or workingDir <> "" Then
+	DoLog ""
+End If
+
 If file = "" Then
     If Not showHelpMsg Then
-        ShowError "No input file was specified."
+        ShowError "No input file was specified." & vbcrlf
         showHelpMsg = True
     End If
 End If
@@ -663,8 +712,6 @@ hadError = False
 hadWarning = False
 
 Dim errors, warnings, errorCount, warningCount, fatalError, fatalErrorLine, parentSteps
-
-DoLog ""
 
 pdfExec(True)
 
