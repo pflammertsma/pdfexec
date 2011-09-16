@@ -1,5 +1,5 @@
 Dim pdfexecVersion, needCScript
-pdfexecVersion = "1.6.2"
+pdfexecVersion = "1.6.3"
 needCScript = False
 needRerun = "Label(s) may have changed. Rerun"
 needsRerun = False
@@ -310,6 +310,20 @@ Sub pdfExec(nextRun)
                             gotoPage = Mid(fileLine, 10)
                         ElseIf Left(fileLine, 9) = "gotoname=" Then
                             gotoName = Mid(fileLine, 10)
+                        ElseIf Left(fileLine, 6) = "pause=" Then
+                            mode = Mid(fileLine, 7)
+                            If IsNumeric(mode) Then
+                                mode = CInt(mode)
+                                If (mode And 1) > 0 Then
+                                    pauseSuccess = True
+                                End If
+                                If (mode And 2) > 0 Then
+                                    pauseWarnings = True
+                                End If
+                                If (mode And 4) > 0 Then
+                                    pauseErrors = True
+                                End If
+                            End If
                         End If
                     Else
                         Exit Do
